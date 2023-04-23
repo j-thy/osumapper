@@ -53,18 +53,23 @@ def read_osu_file(path, convert=False, wav_name="wavfile.wav", json_name="temp_j
 
     return map_dict, mp3_file;
 
+# Analyze the pitches/frequencies in the audio sample
 def get_freqs(sig, fft_size):
-    """
-    Do Fourier Transform and map imaginary to length/angle coordinates
-    """
+    # Applies FFT to the input signal
     Lf = np.fft.fft(sig, fft_size);
+    # Keep only the positive frequencies of the FFT
     Lc = Lf[0:fft_size//2];
+    # Get the magnitude of the FFT
     La = np.abs(Lc[0:fft_size//2]);
+    # Get the phase of the FFT
     Lg = np.angle(Lc[0:fft_size//2]);
     return La, Lg;
 
+# Slices the wave at a given time in milliseconds
 def slice_wave_at(ms, sig, samplerate, size):
+    # Calculate the index corresponding to ms in the wave signal
     ind = (ms/1000 * samplerate)//1;
+    # Take a slice of length size centered at that index
     return sig[max(0, int(ind - size//2)):int(ind + size - size//2)];
 
 def lrmix(sig):
@@ -74,17 +79,17 @@ def lrmix(sig):
     return (sig[:,0]+sig[:,1])/2;
 
 def get_wav_data_at(ms, sig, samplerate, fft_size=2048, freq_low=0, freq_high=-1):
+    # Default to half of the sampling rate if not specified
     if freq_high == -1:
         freq_high = samplerate//2;
+
+    # Get a slice of the wave at the given time
     waveslice = slice_wave_at(ms, sig, samplerate, fft_size);
 
-    # since osu! maps are usually not mapped to stereo wave, let's mix it to reduce 50% of data
-    # waveslice_lr = lrmix(waveslice);
-
-    # do a nice FFT
+    # Find the frequencies in the wave slice
     La, Lg = get_freqs(waveslice, fft_size);
 
-    # cut the frequency bins
+    # Only keep the frequencies in the specified range
     La = La[fft_size*freq_low//samplerate:fft_size*freq_high//samplerate];
     Lg = Lg[fft_size*freq_low//samplerate:fft_size*freq_high//samplerate];
 
@@ -99,27 +104,31 @@ def read_wav_data(timestamps, wavfile, snapint=[-0.3, -0.2, -0.1, 0, 0.1, 0.2, 0
 
     Resampling disabled for librosa because it is too slow.
     """
+    # Read in WAV file as a mono signal and use native sampling
+    # Sig is the audio signal as a 1D numpy array
+    # Samplerate is the sampling rate of the audio signal
     sig, samplerate = librosa.load(wavfile, sr=None, mono=True);
     data = list();
 
-    # normalize sound wave
-    # sig = sig / np.sqrt(np.mean(sig**2, axis=0));
-    # sig = sig / np.max(np.max(np.abs(sig), axis=0));
+    # Normalize sound wave and ensure the maximum absolute value of the signal is equal to 1
     sig = sig / np.max(np.abs(sig));
 
-    # calc a length array
+    # Calculate the time interval between each timestamp and append it to the end of the array.
     tmpts = np.array(timestamps);
     timestamp_interval = tmpts[1:] - tmpts[:-1];
     timestamp_interval = np.append(timestamp_interval, timestamp_interval[-1]);
 
     for sz in snapint:
+        # For each timestamp, get the frequency/pitch data at that time and append it to the data array 
         data_r = np.array([get_wav_data_at(max(0, min(len(sig) - fft_size, coord + timestamp_interval[i] * sz)), sig, samplerate, fft_size=fft_size, freq_high=samplerate//4) for i, coord in enumerate(timestamps)]);
         data.append(data_r);
 
-
     raw_data = np.array(data);
+    # Normalize the data
     norm_data = np.tile(np.expand_dims(np.mean(raw_data, axis=1), 1), (1, raw_data.shape[1], 1, 1));
+    # Standardize the data
     std_data = np.tile(np.expand_dims(np.std(raw_data, axis=1), 1), (1, raw_data.shape[1], 1, 1));
+    # Return the normalized and standardized data
     return (raw_data - norm_data) / std_data;
 
 def get_transformed_lst_data(data):
@@ -154,10 +163,13 @@ def read_and_save_osu_file(path, filename = "saved", divisor=4):
     # EMPTY_TICKS = ticks where no note around in 5 secs
     """
     osu_dict, wav_file = read_osu_file(path, convert = True);
+    # Data is rhythm, flow data is placement
     data, flow_data = get_map_notes(osu_dict, divisor=divisor);
+    # Get ticks/timestamps
     timestamps = [c[1] for c in data];
+    # Get an array of frequencies/pitches at each timestamp
     wav_data = read_wav_data(timestamps, wav_file, snapint=[-0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3], fft_size = 128);
-    # in order to match first dimension
+    # Make time the x-axis and frequency the y-axis
     wav_data = np.swapaxes(wav_data, 0, 1);
 
     # change the representation of note_type

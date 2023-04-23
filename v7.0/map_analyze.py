@@ -7,20 +7,35 @@
 import numpy as np;
 
 def get_map_timing_array(map_json, length=-1, divisor=4):
+    # If the length is not specified...
     if length == -1:
-        length = map_json["obj"][-1]["time"] + 1000; # it has an extra time interval after the last note
-        if map_json["obj"][-1]["type"] & 8: # spinner end
+        # Set length to the time of the last note in the map plus an extra time interval after the last note
+        length = map_json["obj"][-1]["time"] + 1000;
+        # If the last note in the map is a spinner end...
+        if map_json["obj"][-1]["type"] & 8:
+            # Set length to the time of the last spinner end in the map plus an extra time interval after the last spinner end
             length = map_json["obj"][-1]["spinnerEndTime"] + 1000;
+    # Extract an array of timing values from the map_json
     uts_a =  map_json["timing"]["uts"];
+
     out = [];
+    # For each timing value in the map...
     for i, uts in enumerate(uts_a):
+        # Get the start time of the tick
         begin_time = uts["beginTime"];
+        # Get the length of a tick
         mspb = uts["tickLength"];
+        # If the tick is not the last tick...
         if i < len(uts_a)-1:
+            # Get the end time of the tick, which is the start time of the next tick
             end_time = uts_a[i+1]["beginTime"];
         else:
+            # If the tick is the last tick, set the end time to the length of the tick
             end_time = length;
+        
+        # Create an array of timing points between the ticks
         arr = np.floor(np.arange(begin_time, end_time, mspb / divisor));
+        # Append the new timing points to the output array
         out = out + list(map(lambda f: int(f), arr));
     return out;
 
